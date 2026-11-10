@@ -1,0 +1,12 @@
+# Configuração real de produção (Worker existente). Binding D1 = "DB", conforme worker.js.
+# Segredos (GOOGLE_CLIENT_ID/SECRET, OAUTH_ENCRYPTION_KEY) ficam no Cloudflare, NUNCA aqui.
+name = "studio29-core-teste"
+main = "worker.js"
+compatibility_date = "2026-11-10"
+workers_dev = true
+keep_vars = true   # preserva variáveis/segredos já configurados no painel
+
+[[d1_databases]]
+binding = "DB"
+database_name = "studio29-core-teste"
+database_id = "664451f8-fab8-4e36-a298-b5c389d9c93c"
