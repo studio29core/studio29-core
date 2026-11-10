@@ -4,6 +4,7 @@ name = "studio29-core-teste"
 main = "worker.js"
 compatibility_date = "2026-11-10"
 workers_dev = true
+preview_urls = false   # espelha o painel: URLs de versão prévia desligadas
 keep_vars = true   # preserva variáveis/segredos já configurados no painel
 
 [[d1_databases]]
