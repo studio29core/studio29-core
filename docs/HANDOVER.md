@@ -28,3 +28,28 @@ MVP aceito como marco funcional pelo proprietário. Não há comprovação neste
 
 ## Deploy
 O workflow fornecido é um modelo pronto para ativação após informar secrets Cloudflare e copiar os bindings/rotas reais para `wrangler.toml` (não incluído por segurança contra suposições). Auto-deploy após push na `main` com validação de sintaxe, smoke e verificação de URL. Não criar configurações D1/R2 fictícias.
+
+## Auditoria e estado de produção (2026-11-10)
+- Produção: Worker `studio29-core-teste`, D1 `studio29-core-teste` (binding `DB`), URL `https://studio29-core-teste.studio29core.workers.dev`. Só existe a URL workers.dev (sem domínio/rota própria); URLs de versão prévia desligadas.
+- O `worker.js` v1.14.2 do repositório foi comparado com o código implantado: idêntico (ignorando espaços em branco).
+- Eventos ficam na tabela `eventos`. As tabelas `celebra_eventos` e `celebra_organizadores` existem no D1, estão vazias e **não são usadas** pelo `worker.js` (resíduos de versões anteriores). Não apagar sem plano e backup.
+- Reenviar Email: 5 falhas históricas, todas HTTP_400 em 2026-11-06, sem recorrência. Cobertura por testes.
+- Segredos do Worker (não ficam no repositório): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_ENCRYPTION_KEY`. Variável: `RECOVERY_EMAIL_ENABLED=true`.
+
+## Recursos legados (mantidos, não alterar)
+- Worker `studio29-core-api` e D1 `studio29-core` (v1.2.1): legados e separados de produção. Decisão: **manter e documentar**; nada foi apagado ou alterado. Qualquer desativação exige plano e backup prévios.
+- `minhas-financas`: projeto independente; nunca tocar.
+
+## Pipeline de deploy (ativo)
+1. Branch → PR para `main`. O job `validate` (validate.mjs + `npm ci` + `npm test`) deve passar.
+2. Merge na `main` → job `deploy` (environment `production`, só a partir da `main`): `wrangler deploy`, smoke test em `/saude` e registro do commit.
+3. Se `validate` falhar, não há deploy. Se o deploy falhar, a produção permanece na versão anterior.
+- GitHub: secrets `CLOUDFLARE_API_TOKEN` (permissões mínimas: Workers Scripts, D1, KV, Account Settings Read) e `CLOUDFLARE_ACCOUNT_ID`; variável `STUDIO29_SMOKE_URL`. O token pode ter expiração: renovar antes de vencer.
+- Rollback: Cloudflare → Workers & Pages → `studio29-core-teste` → Deployments → reverter para a versão anterior.
+- Primeiro deploy via pipeline: commit `6131d09`, smoke test aprovado, versão 1.14.2.
+
+## Domínio próprio (preparado, desligado)
+- O host padrão continua fixo. Para aceitar domínios adicionais, definir a variável `HOSTS_PERMITIDOS` (lista separada por vírgula) no Worker. Sem ela, o comportamento é idêntico ao anterior. O domínio também precisa ser configurado na Cloudflare; os links já divulgados continuam na URL workers.dev.
+
+## Testes
+- 18 testes (Miniflare + D1 local descartável), incluindo reenvio de e-mail, aprovação de confirmações pendentes pelo organizador e restrição de host. Rodam no CI antes de qualquer deploy.
