@@ -10,3 +10,12 @@ keep_vars = true   # preserva variáveis/segredos já configurados no painel
 binding = "DB"
 database_name = "studio29-core-teste"
 database_id = "664451f8-fab8-4e36-a298-b5c389d9c93c"
+
+# Espelha a configuração atual do painel (Logs no Workers: invocação + persistência).
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+persist = true
