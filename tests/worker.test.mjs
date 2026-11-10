@@ -111,3 +111,70 @@ test('reenviar: cada chamada gera um novo registro de auditoria (sem sobrescreve
   const n = await db.prepare('SELECT COUNT(*) n FROM celebra_notificacoes_envios WHERE confirmacao_id=?').bind(CONF).first();
   assert.equal(n.n, 2);
 });
+
+// ---- Fluxo de aprovação de confirmações pendentes (acesso do organizador por chave) ----
+const KEY = 'c'.repeat(48), KEY_OUTRO = 'd'.repeat(48);
+const CONF_APROV = crypto.randomUUID(), CONF_APROV2 = crypto.randomUUID();
+const orgUrl = (action, k) => `/celebra/${SLUG}/api/${action}` + (k ? `?k=${k}` : '');
+const orgPost = (action, body, k = KEY, headers = {}) => post(orgUrl(action, k), body, headers);
+const situacao = async id => (await db.prepare('SELECT situacao FROM celebra_confirmacoes WHERE id=?').bind(id).first()).situacao;
+
+test('aprovação: prepara chave do organizador e confirmações pendentes', async () => {
+  const t = new Date().toISOString();
+  await run('INSERT INTO celebra_acessos_organizadores(evento_id,token_hash,atualizado_em) VALUES(?,?,?)', EV, sha(KEY), t);
+  for (const [id, n] of [[CONF_APROV, 'Maria Pendente'], [CONF_APROV2, 'João Pendente']])
+    await run("INSERT INTO celebra_confirmacoes(id,evento_id,nome,presenca,origem,situacao) VALUES(?,?,?,'sim','geral','pendente')", id, EV, n);
+});
+
+test('aprovação: sem chave ou com chave inválida/de formato errado → 403', async () => {
+  for (const k of ['', 'xyz', KEY_OUTRO]) {
+    const r = await mf.dispatchFetch(ORIGIN + orgUrl('organizador-confirmacoes', k));
+    assert.equal(r.status, 403);
+  }
+  assert.equal((await orgPost('organizador-validar', { id: CONF_APROV, situacao: 'confirmado' }, KEY_OUTRO)).status, 403);
+  assert.equal(await situacao(CONF_APROV), 'pendente');
+});
+
+test('aprovação: listagem do organizador mostra pendentes do próprio evento', async () => {
+  const r = await mf.dispatchFetch(ORIGIN + orgUrl('organizador-confirmacoes', KEY));
+  assert.equal(r.status, 200);
+  const j = await r.json();
+  const p = j.confirmacoes.find(c => c.id === CONF_APROV);
+  assert.equal(p?.situacao, 'pendente');
+});
+
+test('aprovação: método errado → 405, Origin diferente → 403, dados inválidos → 400', async () => {
+  assert.equal((await mf.dispatchFetch(ORIGIN + orgUrl('organizador-validar', KEY))).status, 405);
+  assert.equal((await orgPost('organizador-validar', { id: CONF_APROV, situacao: 'confirmado' }, KEY, { Origin: 'https://outro.exemplo' })).status, 403);
+  assert.equal((await orgPost('organizador-validar', { id: 'nao-e-uuid', situacao: 'confirmado' })).status, 400);
+  assert.equal((await orgPost('organizador-validar', { id: CONF_APROV, situacao: 'rejeitado' })).status, 400);
+  assert.equal(await situacao(CONF_APROV), 'pendente');
+});
+
+test('aprovação: validar muda pendente → confirmado; repetir devolve 409 sem alterar nada', async () => {
+  const r = await orgPost('organizador-validar', { id: CONF_APROV, situacao: 'confirmado' });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).resultado, 'ATUALIZADO');
+  assert.equal(await situacao(CONF_APROV), 'confirmado');
+  assert.equal((await orgPost('organizador-validar', { id: CONF_APROV, situacao: 'confirmado' })).status, 409);
+  assert.equal(await situacao(CONF_APROV2), 'pendente'); // outra confirmação intacta
+});
+
+test('aprovação: não valida confirmação de outro evento com a chave deste', async () => {
+  const evOff = (await db.prepare('SELECT id FROM eventos WHERE slug=?').bind(SLUG_OFF).first()).id;
+  assert.ok(evOff);
+  const r = await orgPost('organizador-validar', { id: CONF_OFF, situacao: 'confirmado' });
+  assert.equal(r.status, 409);
+  assert.equal(await situacao(CONF_OFF), 'pendente');
+});
+
+test('host: domínio fora da lista → 403; com HOSTS_PERMITIDOS passa; padrão segue funcionando', async () => {
+  const mk = bindings => new Miniflare({ modules: true, scriptPath: 'worker.js', compatibilityDate: '2026-08-06', d1Databases: { DB: 'h' }, bindings });
+  const sem = await mk({}), com = await mk({ HOSTS_PERMITIDOS: 'eventos.exemplo.com.br, outro.exemplo' });
+  try {
+    assert.equal((await sem.dispatchFetch('https://eventos.exemplo.com.br/saude')).status, 403);
+    assert.notEqual((await com.dispatchFetch('https://eventos.exemplo.com.br/saude')).status, 403);
+    assert.equal((await com.dispatchFetch('https://invasor.exemplo/saude')).status, 403);
+    assert.notEqual((await sem.dispatchFetch(ORIGIN + '/saude')).status, 403);
+  } finally { await sem.dispose(); await com.dispose(); }
+});

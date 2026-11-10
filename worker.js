@@ -806,7 +806,7 @@ export default {
  async fetch(req,env){
   try{
    const url=new URL(req.url),path=url.pathname.replace(/\/+$/,'')||'/',method=req.method;
-   if(url.hostname!=='studio29-core-teste.studio29core.workers.dev')return error('AMBIENTE_NAO_AUTORIZADO',403);
+   if(url.hostname!=='studio29-core-teste.studio29core.workers.dev'&&!String(env.HOSTS_PERMITIDOS||'').split(',').map(h=>h.trim().toLowerCase()).filter(Boolean).includes(url.hostname))return error('AMBIENTE_NAO_AUTORIZADO',403); // host padrão fixo; domínios próprios só via variável HOSTS_PERMITIDOS (lista separada por vírgula)
    // v1.13.5: entrada autenticada no servidor; sem cabecalho v1.5 e sem init intermediario apos login.
    // Recuperação e redefinição sempre usam a página de autenticação.
    if(method==='GET'&&/^\/core\/favicon\/(core|comercial|convite|organizador|validacao)$/.test(path)){
